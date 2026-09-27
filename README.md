@@ -21,11 +21,19 @@ python -m unittest discover -s tests -v
 真实 LLM 运行：
 
 ```powershell
+$env:PYTHONPATH = "src"
 $env:OPENAI_API_KEY = "your-real-key"
 $env:OPENAI_BASE_URL = "https://api.openai.com/v1"
 $env:OPENAI_MODEL = "gpt-4o-mini"
-$env:PYTHONPATH = "src"
 python -m mini_agent.cli
+```
+
+也可以在项目根目录创建本地 `.env` 文件，CLI 会自动读取；`.env` 已被 `.gitignore` 忽略。真实 Key 不要写入或提交 `.env.example`：
+
+```text
+OPENAI_API_KEY=your-real-key
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4o-mini
 ```
 
 程序会先要求输入 `user_id` 和 `session_id`，之后进入多轮对话。工具调用日志写入 `traces/<run_id>.jsonl`。代码没有把 API Key 写入仓库，也没有提供 API 地址给用户，提交时只需提交 GitHub 仓库链接。
