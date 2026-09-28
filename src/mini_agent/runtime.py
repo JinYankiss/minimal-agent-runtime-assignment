@@ -6,7 +6,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from .errors import AgentError, MaxRoundsExceeded
+from .errors import AgentError, LLMProtocolError, MaxRoundsExceeded
 from .llm import LLMClient
 from .models import (
     FinalAnswer,
@@ -114,7 +114,33 @@ class AgentRuntime:
         messages.extend(message.as_llm_message() for message in self.sessions.context(session))
         raw = self.llm.complete(messages, self.registry.schemas())
         self.tracer.event(run_id, "llm_decision", round=round_number, raw=raw)
-        return parse_decision(raw)
+        try:
+            return parse_decision(raw)
+        except LLMProtocolError as exc:
+            self.tracer.event(
+                run_id,
+                "llm_format_retry",
+                round=round_number,
+                error=str(exc),
+            )
+            repair_messages = messages + [
+                {
+                    "role": "user",
+                    "content": (
+                        "Your previous output was invalid. Repair only the JSON format and "
+                        "return exactly one decision object matching the required schema. "
+                        f"Invalid output: {raw}"
+                    ),
+                }
+            ]
+            repaired = self.llm.complete(repair_messages, self.registry.schemas())
+            self.tracer.event(
+                run_id,
+                "llm_repaired_decision",
+                round=round_number,
+                raw=repaired,
+            )
+            return parse_decision(repaired)
 
     def _run_tool(
         self, run_id: str, session: Session, decision: ToolCall, round_number: int

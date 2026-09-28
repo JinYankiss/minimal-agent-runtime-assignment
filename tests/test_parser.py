@@ -3,6 +3,7 @@ import unittest
 from mini_agent.errors import LLMProtocolError
 from mini_agent.models import FinalAnswer, ToolCall
 from mini_agent.parser import parse_decision
+from mini_agent.llm import _sanitize_messages
 
 
 class ParserTest(unittest.TestCase):
@@ -23,3 +24,14 @@ class ParserTest(unittest.TestCase):
             parse_decision(
                 '{"action":{"type":"tool_call","tool_name":"calculator"}}'
             )
+
+    def test_parse_flat_final_shape(self):
+        decision = parse_decision(
+            '{"action":"final","answer":"18*7 的结果是 126。"}'
+        )
+        self.assertIsInstance(decision, FinalAnswer)
+        self.assertEqual(decision.answer, "18*7 的结果是 126。")
+
+    def test_sanitize_messages_replaces_unpaired_surrogate(self):
+        messages = _sanitize_messages([{"role": "user", "content": "bad\ud800text"}])
+        self.assertEqual(messages[0]["content"], "bad\ufffdtext")

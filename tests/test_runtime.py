@@ -51,6 +51,18 @@ class RuntimeTest(unittest.TestCase):
         session = runtime.sessions.get_or_create("u1", "s1")
         self.assertTrue(any("tool=calculator" in item.content for item in session.messages))
 
+    def test_invalid_llm_json_is_repaired_once(self):
+        runtime = runtime_for(
+            [
+                '{"action": "type": "final", "answer": "126"}',
+                '{"action":{"type":"final","answer":"126"}}',
+            ],
+            self.tmp_path,
+        )
+        result = runtime.run("u1", "repair", "answer")
+        self.assertEqual(result.answer, "126")
+        self.assertEqual(len(runtime.llm.calls), 2)
+
     def test_sessions_are_isolated(self):
         runtime = runtime_for(
             ['{"action":{"type":"final","answer":"ok"}}'] * 2, self.tmp_path
@@ -71,6 +83,17 @@ class RuntimeTest(unittest.TestCase):
         self.assertTrue(session.summary)
         self.assertIn("message-0", session.summary)
         self.assertLessEqual(len(store.context(session)), 5)
+
+    def test_tool_result_uses_prompt_protocol_not_native_tool_role(self):
+        message = Message(
+            MessageRole.TOOL,
+            "tool=calculator result=126",
+            name="calculator",
+            tool_call_id="call-1",
+        ).as_llm_message()
+        self.assertEqual(message["role"], "user")
+        self.assertIn("calculator", message["content"])
+        self.assertNotIn("tool_call_id", message)
 
     def test_max_rounds_is_enforced(self):
         loop = '{"action":{"type":"tool_call","call_id":"same","tool_name":"weather","arguments":{"city":"厦门"}}}'

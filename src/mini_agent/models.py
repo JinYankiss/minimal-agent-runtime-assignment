@@ -26,6 +26,16 @@ class Message:
     tool_call_id: str | None = None
 
     def as_llm_message(self) -> dict[str, str]:
+        if self.role == MessageRole.TOOL:
+            tool_name = self.name or "unknown"
+            call_id = self.tool_call_id or "unknown"
+            return {
+                "role": MessageRole.USER.value,
+                "content": (
+                    f"Tool result for {tool_name} (call_id={call_id}): "
+                    f"{self.content}"
+                ),
+            }
         message: dict[str, str] = {"role": self.role.value, "content": self.content}
         if self.name:
             message["name"] = self.name

@@ -40,6 +40,7 @@ class OpenAICompatibleClient:
     def complete(
         self, messages: list[dict[str, str]], tools: list[dict[str, Any]]
     ) -> str:
+        messages = _sanitize_messages(messages)
         body = {
             "model": self.model,
             "messages": messages,
@@ -58,6 +59,11 @@ class OpenAICompatibleClient:
         try:
             with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
                 payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read(1200).decode("utf-8", "replace").replace("\n", " ")
+            raise LLMProtocolError(
+                f"LLM request failed with HTTP {exc.code}: {detail}"
+            ) from exc
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
             raise LLMProtocolError(f"LLM request failed: {exc}") from exc
         try:
@@ -67,6 +73,21 @@ class OpenAICompatibleClient:
         if not isinstance(content, str) or not content.strip():
             raise LLMProtocolError("LLM response content is empty")
         return content
+
+
+def _sanitize_messages(messages: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Remove invalid UTF-16 surrogate code points before JSON serialization."""
+    return [
+        {
+            key: value.encode("utf-16", "surrogatepass").decode(
+                "utf-16", "replace"
+            )
+            if isinstance(value, str)
+            else value
+            for key, value in message.items()
+        }
+        for message in messages
+    ]
 
 
 @dataclass

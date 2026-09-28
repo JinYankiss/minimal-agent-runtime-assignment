@@ -11,6 +11,8 @@ def parse_decision(raw: str) -> FinalAnswer | ToolCall:
     payload = _parse_json_object(raw)
     thought = _optional_string(payload, "thought")
     action = payload.get("action")
+    if isinstance(action, str):
+        action = _normalize_flat_action(payload, action)
     if not isinstance(action, dict):
         raise LLMProtocolError("decision.action must be an object")
     action_type = action.get("type")
@@ -36,6 +38,19 @@ def parse_decision(raw: str) -> FinalAnswer | ToolCall:
             thought=thought,
         )
     raise LLMProtocolError("action.type must be final or tool_call")
+
+
+def _normalize_flat_action(payload: dict[str, Any], action_type: str) -> dict[str, Any]:
+    if action_type == "final":
+        return {"type": "final", "answer": payload.get("answer")}
+    if action_type == "tool_call":
+        return {
+            "type": "tool_call",
+            "call_id": payload.get("call_id"),
+            "tool_name": payload.get("tool_name"),
+            "arguments": payload.get("arguments", {}),
+        }
+    return {"type": action_type}
 
 
 def _parse_json_object(raw: str) -> dict[str, Any]:
