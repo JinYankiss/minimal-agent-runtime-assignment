@@ -8,7 +8,12 @@ from dataclasses import dataclass
 from threading import Lock
 from typing import Any, Mapping
 
-from .errors import ToolExecutionError, ToolTimeoutError
+from .errors import (
+    ToolExecutionError,
+    ToolNotFoundError,
+    ToolTimeoutError,
+    ToolValidationError,
+)
 from .models import ToolContext, ToolEffect, ToolResult, ToolSpec
 from .registry import ToolRegistry
 
@@ -53,8 +58,19 @@ class ToolExecutor:
         tool_name: str,
         arguments: dict[str, Any],
     ) -> ToolResult:
-        spec = self.registry.get(tool_name)
-        self.registry.validate(spec, arguments)
+        try:
+            spec = self.registry.get(tool_name)
+            self.registry.validate(spec, arguments)
+        except (ToolNotFoundError, ToolValidationError) as exc:
+            return ToolResult(
+                call_id=context.call_id,
+                tool_name=tool_name,
+                ok=False,
+                error=str(exc),
+                attempts=0,
+                idempotency_key=context.idempotency_key,
+                retryable=False,
+            )
         key = context.idempotency_key
         previous = self.ledger.get(key)
         if previous and previous.result:

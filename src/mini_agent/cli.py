@@ -14,6 +14,7 @@ def main() -> int:
         runtime = AgentRuntime.with_defaults(
             OpenAICompatibleClient.from_environment(),
             trace_dir=os.getenv("AGENT_TRACE_DIR", "traces"),
+            session_path=os.getenv("AGENT_SESSION_PATH", "sessions/sessions.json"),
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)

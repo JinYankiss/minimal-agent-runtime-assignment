@@ -44,14 +44,19 @@ class AgentRuntime:
     max_rounds: int = 8
 
     @classmethod
-    def with_defaults(cls, llm: LLMClient, trace_dir: str = "traces") -> "AgentRuntime":
+    def with_defaults(
+        cls,
+        llm: LLMClient,
+        trace_dir: str = "traces",
+        session_path: str | None = "sessions/sessions.json",
+    ) -> "AgentRuntime":
         from .tools import default_registry
 
         registry = default_registry()
         return cls(
             llm=llm,
             registry=registry,
-            sessions=SessionStore(),
+            sessions=SessionStore(storage_path=session_path),
             executor=ToolExecutor(registry),
             tracer=TraceLogger(trace_dir),
         )

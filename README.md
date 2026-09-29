@@ -1,6 +1,6 @@
 # Minimal Agent Runtime
 
-这是一个不依赖 LangGraph、OpenHands、OpenClaw、PI 等 Agent 框架的最小可用 Agent。核心循环、工具注册、LLM 输出解析、Session、上下文压缩、工具超时、幂等重试和 JSONL trace 都由本项目自行实现。
+这是一个不依赖 LangGraph、OpenHands、OpenClaw、PI 等 Agent 框架的最小可用 Agent。核心循环、工具注册、LLM 输出解析、Session 持久化、上下文压缩、工具超时、幂等重试和 JSONL trace 都由本项目自行实现。
 
 ## 运行环境
 
@@ -36,14 +36,14 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4o-mini
 ```
 
-程序会先要求输入 `user_id` 和 `session_id`，之后进入多轮对话。工具调用日志写入 `traces/<run_id>.jsonl`。代码没有把 API Key 写入仓库，也没有提供 API 地址给用户，提交时只需提交 GitHub 仓库链接。
+程序会先要求输入 `user_id` 和 `session_id`，之后进入多轮对话。工具调用日志写入 `traces/<run_id>.jsonl`，Session 默认持久化到 `sessions/sessions.json`，也可以用 `AGENT_SESSION_PATH` 覆盖。代码没有把 API Key 写入仓库，也没有提供 API 地址给用户，提交时只需提交 GitHub 仓库链接。
 
 ## 设计
 
 ```text
 CLI
   -> AgentRuntime
-       -> SessionStore: (user_id, session_id) 隔离上下文
+       -> SessionStore: (user_id, session_id) 隔离并持久化上下文
        -> LLMClient: OpenAI-compatible HTTP client
        -> DecisionParser: JSON -> final/tool_call
        -> ToolRegistry: name/description/JSON Schema/effect
@@ -59,6 +59,8 @@ CLI
 4. 工具调用经过 Schema 校验、幂等策略判断和超时执行。
 5. 把工具结果作为 `tool` 消息追加到当前 Session，继续下一轮。
 6. `final` 返回答案；超过 `max_rounds` 则失败并写 trace。
+
+如果 LLM 选择了不存在的工具，或者给出的参数不满足工具 JSON Schema，框架不会中断整个 run，而是把错误归一为 `ToolResult(ok=False)` 作为 observation 写回上下文，让下一轮 LLM 可以修正工具名、补齐参数或直接给出解释。
 
 ### 工具
 
@@ -79,6 +81,7 @@ Session 的主键是 `(user_id, session_id)`，所以同一个用户的窗口 1 
 Memory 放置方式：
 
 - 当前短期记忆放在 `Session.messages`，包含用户输入、Agent 已执行的工具调用摘要和工具结果。
+- `SessionStore` 会把 `summary` 和最近消息保存到 JSON 文件，默认路径是 `sessions/sessions.json`；该目录已加入 `.gitignore`，不会随代码提交。
 - Agent 的完整思考过程不写入上下文，只允许模型输出简短、面向决策的 `thought`，避免把隐藏推理当成长期记忆。
 - 消息数量超过阈值后，`SessionStore` 把较早的用户消息和工具结果压缩成有上限的 summary，并只保留最近消息。
 - 每次 LLM 调用前召回：`summary + 最近 max_messages 条消息 + 当前工具 Schema`。
@@ -104,6 +107,8 @@ Memory 放置方式：
 - 上下文 summary 压缩与最近消息保留。
 - 最大轮次限制。
 - LLM JSON 解析失败/字段缺失。
+- 工具不存在和参数校验失败会作为 observation 回灌，不中断 run。
+- Session JSON 持久化和进程重建后的恢复。
 - 非幂等工具不自动重试。
 - 幂等写结果 replay，实际 handler 只执行一次。
 

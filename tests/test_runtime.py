@@ -51,6 +51,38 @@ class RuntimeTest(unittest.TestCase):
         session = runtime.sessions.get_or_create("u1", "s1")
         self.assertTrue(any("tool=calculator" in item.content for item in session.messages))
 
+    def test_tool_contract_errors_are_returned_as_observations(self):
+        runtime = runtime_for(
+            [
+                '{"action":{"type":"tool_call","call_id":"bad-tool","tool_name":"missing_tool","arguments":{}}}',
+                '{"action":{"type":"final","answer":"工具不存在，已换一种方式回答"}}',
+            ],
+            self.tmp_path,
+        )
+        result = runtime.run("u1", "missing-tool", "调用不存在工具")
+        self.assertEqual(result.answer, "工具不存在，已换一种方式回答")
+        session = runtime.sessions.get_or_create("u1", "missing-tool")
+        self.assertTrue(
+            any("unknown tool: missing_tool" in item.content for item in session.messages)
+        )
+
+        runtime = runtime_for(
+            [
+                '{"action":{"type":"tool_call","call_id":"bad-args","tool_name":"calculator","arguments":{}}}',
+                '{"action":{"type":"final","answer":"参数错误已反馈"}}',
+            ],
+            self.tmp_path,
+        )
+        result = runtime.run("u1", "bad-args", "参数缺失")
+        self.assertEqual(result.answer, "参数错误已反馈")
+        session = runtime.sessions.get_or_create("u1", "bad-args")
+        self.assertTrue(
+            any(
+                "missing required arguments: expression" in item.content
+                for item in session.messages
+            )
+        )
+
     def test_invalid_llm_json_is_repaired_once(self):
         runtime = runtime_for(
             [
@@ -83,6 +115,33 @@ class RuntimeTest(unittest.TestCase):
         self.assertTrue(session.summary)
         self.assertIn("message-0", session.summary)
         self.assertLessEqual(len(store.context(session)), 5)
+
+    def test_session_store_persists_and_restores_messages(self):
+        path = self.tmp_path / "sessions.json"
+        store = SessionStore(max_messages=4, summary_trigger=5, storage_path=path)
+        session = store.get_or_create("u", "s")
+        store.append(
+            session,
+            Message(MessageRole.USER, "persist me"),
+            Message(
+                MessageRole.TOOL,
+                "tool=calculator result=42",
+                name="calculator",
+                tool_call_id="c1",
+            ),
+        )
+
+        restored = SessionStore(max_messages=4, summary_trigger=5, storage_path=path)
+        restored_session = restored.get_or_create("u", "s")
+        self.assertEqual(
+            [message.content for message in restored_session.messages],
+            [
+                "persist me",
+                "tool=calculator result=42",
+            ],
+        )
+        self.assertEqual(restored_session.messages[1].name, "calculator")
+        self.assertEqual(restored_session.messages[1].tool_call_id, "c1")
 
     def test_tool_result_uses_prompt_protocol_not_native_tool_role(self):
         message = Message(

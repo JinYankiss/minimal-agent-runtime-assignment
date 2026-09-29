@@ -41,9 +41,15 @@ The thought must be brief and operational; do not expose private chain-of-though
 
 用 `(user_id, session_id)` 作为内存存储 key。同一个用户的两个窗口拥有两个 Session 对象，不能只用 user_id，否则题目中的窗口 1/2 会互相污染。
 
+后续审查发现纯内存 Session 在进程重启后无法继续对话，因此补充 JSON 持久化。`SessionStore` 负责保存和恢复 `summary + messages`，默认路径为 `sessions/sessions.json`，运行数据目录不提交到 GitHub。
+
 ### context 太长怎么处理？
 
 达到阈值后，保留最近消息，把更早的用户消息和工具结果截断后拼成有上限 summary。每次 LLM 调用都放 summary 和最近消息；本题不做复杂的语义摘要，降低不可控依赖。
+
+### 工具不存在或参数错误怎么办？
+
+这类错误来自 LLM 决策不稳定，属于 Agent 可以自我修正的 observation。工具层不再把 `ToolNotFoundError` / `ToolValidationError` 直接抛出到 Runtime，而是返回 `ToolResult(ok=False)`。Runtime 按正常工具结果写回上下文，下一轮 LLM 可以更换工具、补齐参数或直接解释失败原因。
 
 ### 工具超时后是否重试？
 
@@ -51,7 +57,7 @@ The thought must be brief and operational; do not expose private chain-of-though
 
 ## 4. 验证记录
 
-- 使用 `unittest` 覆盖直接回答、工具循环、Session 隔离、上下文压缩、最大轮次、JSON 解析失败、非幂等禁止重试和幂等结果 replay。
+- 使用 `unittest` 覆盖直接回答、工具循环、Session 隔离、Session 持久化恢复、上下文压缩、最大轮次、JSON 解析失败、工具契约错误 observation 回灌、非幂等禁止重试和幂等结果 replay。
 - 使用 mock/scripted LLM 测试 Runtime，不让单测依赖外部 API。
 - 真实 LLM 入口使用 `OpenAICompatibleClient`，密钥只从环境变量读取。
 - trace 使用 JSONL，记录 run、LLM decision、tool start/finish 和 final/failure，便于面试时演示定位过程。
